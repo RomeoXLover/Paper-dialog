@@ -1,0 +1,38 @@
+# ==============================================================================
+# Paper-dialog Configuration
+# Customize the Dialog API modal title, body lines, buttons, and messages here.
+# Supports Adventure MiniMessage tags (e.g., <gold>, <bold>, <green>, <aqua>, etc.)
+# ==============================================================================
+
+dialog:
+  # Title displayed in the modal header
+  title: "<gold><bold>Task Selection</bold></gold>"
+
+  # Body text: exactly two lines displayed above the action buttons
+  body:
+    line1: "Please select an operational task to perform:"
+    line2: "Clicking any button will execute the selected action."
+
+  # Action buttons configuration (Button 1, Button 2, Button 3)
+  buttons:
+    button1:
+      # Label on the button
+      label: "<green>Task Alpha</green>"
+      # Button width in pixels (1 to 1024, default 150)
+      width: 150
+      # Chat message sent to the player when clicked
+      message: "<green>[Task] You executed Task Alpha!</green>"
+      # Suffix printed to server console
+      console_log: "clicked: Task Alpha"
+
+    button2:
+      label: "<aqua>Task Beta</aqua>"
+      width: 150
+      message: "<aqua>[Task] You executed Task Beta!</aqua>"
+      console_log: "clicked: Task Beta"
+
+    button3:
+      label: "<light_purple>Task Gamma</light_purple>"
+      width: 150
+      message: "<light_purple>[Task] You executed Task Gamma!</light_purple>"
+      console_log: "clicked: Task Gamma"

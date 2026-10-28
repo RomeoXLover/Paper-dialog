@@ -1,0 +1,14 @@
+name: PaperDialogTest
+version: '${version}'
+main: com.example.dialogtest.DialogTestPlugin
+api-version: '1.21'
+description: Minimal Paper plugin testing the Paper 1.21.7 Dialog API
+commands:
+  task:
+    description: Opens the test Dialog API interface
+    permission: dialogtest.task
+    usage: /task
+permissions:
+  dialogtest.task:
+    description: Allows using the /task command
+    default: true
