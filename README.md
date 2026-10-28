@@ -1,5 +1,7 @@
 # Paper-dialog (Paper 1.21.7 Dialog API)
 
+[![Build](https://github.com/RomeoXLover/Paper-dialog/actions/workflows/build.yml/badge.svg)](https://github.com/RomeoXLover/Paper-dialog/actions/workflows/build.yml)
+
 A minimal Minecraft Paper plugin demonstrating and testing the official **Paper 1.21.7 Dialog API** on **Java 21**.
 
 ---
@@ -9,7 +11,56 @@ A minimal Minecraft Paper plugin demonstrating and testing the official **Paper 
 - **Native Dialog API**: Uses real server-driven modal forms (`io.papermc.paper.dialog.Dialog`, `DialogBase`, `ActionButton`, `MultiActionType`, and `Player#showDialog`).
 - **Fully Configurable**: All dialog properties (Title, Body lines, Button text, Widths, Chat messages, and Console logs) can be edited live via `config.yml` or directly in code.
 - **Adventure MiniMessage Support**: Format colors and styles easily using tags like `<gold>`, `<bold>`, `<green>`, `<aqua>`, `<light_purple>`, etc.
-- **Turnkey Build**: Includes complete Gradle 8.5 wrapper (`gradlew`), build files, and a one-step `build.sh` script.
+- **CI Verified**: Automated GitHub Actions workflow compiling with Java 21 and Gradle 8.5.
+
+---
+
+## What Breaks (Real-World Quirks & Technical Gotchas)
+
+These are the exact runtime behaviors, memory limits, and build issues observed when compiling and running this plugin:
+
+### 1. Callback Lifetime & Expiration
+- **The Issue**: Action button callbacks registered via `DialogAction.customClick(callback, options)` use `ClickCallback.Options.builder().uses(1).lifetime(Duration.ofMinutes(5)).build()`.
+- **What Breaks**:
+  - If a player opens the dialog with `/task` and leaves it open on their screen for more than 5 minutes before clicking, the callback silently expires in Adventure's callback registry. Clicking any button results in a dead click with no chat message and no server log.
+  - The `uses(1)` limit ensures single execution per button instance. If the client sends duplicate packets or tries to reuse the button, it will not fire a second time.
+
+### 2. Server Restarts & Reloads Drop Callbacks
+- **The Issue**: Inlined dialogs constructed via `Dialog.create(...)` register ephemeral custom click listeners in the server JVM's heap memory.
+- **What Breaks**:
+  - Callbacks do not survive a server restart or `/reload`. If a player is looking at the `/task` modal when the server restarts or reloads, the screen remains visible on the client, but clicking any button does nothing because the corresponding callback reference in memory was destroyed.
+  - The dialog must be dismissed (Esc) and reopened with `/task` to establish fresh callbacks.
+
+### 3. Gradle Build Daemon Metaspace Exhaustion
+- **The Issue Hit During Build**: When running Gradle 8.5 with Java 21 against `paper-api:1.21.7-R0.1-SNAPSHOT`, the default Gradle daemon heap and Metaspace (`-XX:MaxMetaspaceSize=384m`) were overwhelmed.
+- **What Broke**: The daemon entered a severe GC thrashing state at 97.4% Metaspace utilization, taking over 10 minutes to resolve dependencies and compile classes.
+- **The Fix**: `gradle.properties` must explicitly define:
+  ```properties
+  org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=1024m
+  org.gradle.daemon=false
+  ```
+
+### 4. Toolchain Discovery Latency
+- **The Issue Hit During Build**: Using Gradle's `java.toolchain` configuration caused the compiler to hang while scanning common Linux directory trees (`/usr/lib/jvm/openjdk-21`, `/usr/lib/jvm/openjdk-17`) for installed toolchains.
+- **The Fix**: Removed toolchain auto-discovery from `build.gradle` and replaced it with direct compiler targets:
+  ```groovy
+  java {
+      sourceCompatibility = JavaVersion.VERSION_21
+      targetCompatibility = JavaVersion.VERSION_21
+  }
+  tasks.withType(JavaCompile).configureEach {
+      options.encoding = 'UTF-8'
+      options.release = 21
+  }
+  ```
+
+### 5. Single-Player Pause vs Dedicated Server
+- **The Issue**: `DialogBase.builder().pause(true)` is designed to pause single-player worlds when opening menus.
+- **What Breaks**: On a dedicated Paper multiplayer server, the server tick loop never pauses. Entities will continue moving and hostile mobs can still attack the player while the dialog is active. We explicitly set `.pause(false)` to match server reality.
+
+### 6. Escape Key vs Cancel Events
+- **The Issue**: `canCloseWithEscape(true)` allows dismissing the dialog with Esc.
+- **What Breaks**: Pressing Escape does not trigger an action button or emit a cancellation callback unless an explicit `exitAction` is registered on `MultiActionType`. The dialog simply disappears client-side.
 
 ---
 
@@ -54,7 +105,7 @@ dialog:
       console_log: "clicked: Task Gamma"
 ```
 
-After modifying `config.yml`, restart the server or reload plugins.
+Restart the server or reload plugins to apply config changes.
 
 ---
 
@@ -63,8 +114,8 @@ After modifying `config.yml`, restart the server or reload plugins.
 If you prefer hardcoding or adding more complex logic, the dialog definition is located in:
 [`src/main/java/com/example/dialogtest/TaskCommand.java`](src/main/java/com/example/dialogtest/TaskCommand.java)
 
-#### 1. Changing the Title & Body Text
-In `openTaskDialog(Player player)` around line 50:
+#### 1. Changing Title & Body Text
+In `openTaskDialog(Player player)`:
 ```java
 final DialogBase base = DialogBase.builder(Component.text("Your Custom Title", NamedTextColor.GOLD))
         .canCloseWithEscape(true)
@@ -78,11 +129,10 @@ final DialogBase base = DialogBase.builder(Component.text("Your Custom Title", N
         .build();
 ```
 
-#### 2. Changing the Action Buttons
-In `openTaskDialog(Player player)` around line 68:
+#### 2. Changing Action Buttons
 ```java
 final ActionButton button1 = ActionButton.builder(Component.text("Custom Button 1", NamedTextColor.GREEN))
-        .width(180) // Set custom width
+        .width(180)
         .action(DialogAction.customClick((response, audience) -> {
             audience.sendMessage(Component.text("Custom response to chat!"));
             plugin.getLogger().info(player.getName() + " clicked Custom Button 1");
@@ -90,8 +140,7 @@ final ActionButton button1 = ActionButton.builder(Component.text("Custom Button 
         .build();
 ```
 
-#### 3. Changing Layout and Number of Columns
-In `openTaskDialog(Player player)` around line 112:
+#### 3. Changing Layout Columns
 ```java
 // 1 = vertical stack, 2 or 3 = grid layout
 final MultiActionType type = DialogType.multiAction(List.of(button1, button2, button3))
@@ -105,6 +154,9 @@ final MultiActionType type = DialogType.multiAction(List.of(button1, button2, bu
 
 ```text
 Paper-dialog/
+├── .github/
+│   └── workflows/
+│       └── build.yml                     # GitHub Actions CI build workflow
 ├── build.gradle                          # Dependencies and compiler options
 ├── settings.gradle                       # Project name
 ├── gradle.properties                     # JVM & memory flags for compiler
@@ -145,7 +197,7 @@ Or using Gradle directly:
 ./gradlew build
 ```
 
-Compiled JAR will be placed at:
+Compiled JAR output:
 ```text
 build/libs/paper-dialog-test-1.0.0-SNAPSHOT.jar
 ```
